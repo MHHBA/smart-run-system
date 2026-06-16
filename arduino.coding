@@ -1,0 +1,79 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+#define SS_PIN 5
+#define RST_PIN 22
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+
+// Maklumat Wi-Fi Hotspot Kau
+const char* ssid = "ROG";
+const char* password = "qwertyuiop123";
+
+// Alamat IP Server OS Laptop Kau
+const char* serverURL = "http://10.70.37.154:5000/checkin";
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000); // Bagi masa untuk Serial bersedia
+
+  SPI.begin();
+  mfrc522.PCD_Init();
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting WiFi");
+
+  // Loop ini wajib ada untuk tunggu Wi-Fi betul-betul bersambung
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected!");
+  Serial.println("Sedia untuk scan kad RFID...");
+}
+
+void loop() {
+  // Check jika ada kad baharu dihampiri pada sensor
+  if (!mfrc522.PICC_IsNewCardPresent())
+    return;
+
+  // Baca nombor siri kad
+  if (!mfrc522.PICC_ReadCardSerial())
+    return;
+
+  String uid = "";
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    uid += String(mfrc522.uid.uidByte[i], HEX);
+  }
+
+  uid.toUpperCase();
+  Serial.println("\n-------------------------");
+  Serial.println("UID Kad Di-scan: " + uid);
+
+  // Hantar data ke Flask Server jika Wi-Fi bersambung
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    http.begin(serverURL);
+    http.addHeader("Content-Type", "application/json");
+
+    // Format payload JSON untuk dihantar ke app.py
+    String jsonData = "{\"uid\":\"" + uid + "\"}";
+
+    int httpResponseCode = http.POST(jsonData);
+    String response = http.getString();
+
+    Serial.print("HTTP Code: ");
+    Serial.println(httpResponseCode);
+    Serial.println("Server Response: " + response);
+
+    http.end();
+  } else {
+    Serial.println("Ralat: Wi-Fi terputus!");
+  }
+
+  delay(2000); // Delay 2 saat sebelum boleh scan kad seterusnya
+}
